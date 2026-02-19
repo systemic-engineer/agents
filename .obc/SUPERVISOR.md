@@ -66,6 +66,20 @@ When all workers complete:
 
 ---
 
+## Self-Monitoring OBCs
+
+Observables you run on yourself while supervising.
+
+| Observable | Budget | Cascade |
+|---|---|---|
+| Token usage | < 50% context window before integration begins | Summarize in-progress state, surface to Alex, request fresh session |
+| Worker heartbeat | Each worker emits chatter within 30s | If silent → probe with `Agent_Question`. If no response → emit `Agent_Blocker` to Alex |
+| Decision latency | `Agent_Decision` events surfaced to Alex within 5 minutes | Blocked decisions stall the whole tree — don't let them queue |
+| Integration batch | ≤ 5 PRs merged per `just check` run | Run `just check` after every batch. Don't accumulate debt between checks |
+| Scope creep | Workers touch only their assigned subtrees | Any out-of-subtree report → halt the worker, reassign or re-scope |
+
+---
+
 ## What You Don't Do
 
 - Write code yourself — spawn workers for that

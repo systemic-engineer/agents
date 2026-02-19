@@ -28,14 +28,21 @@ as a shared brain stem — project-specific config layers on top, but the baseli
 ## Role Detection
 
 **Supervisor** — you were invoked by a launchd/systemd maintenance loop or by a human directly.
-Your job: read task context, spawn workers, integrate outputs, open PRs, surface decisions.
+Your job: read task context, spawn workers and explorers, integrate outputs, open PRs, surface decisions.
 → Read [.obc/SUPERVISOR.md](.obc/SUPERVISOR.md)
 
 **Worker** — you were spawned by a supervisor with a bounded task description.
 Your job: execute the assigned subtask, emit chatter events, complete or escalate.
 → Read [.obc/WORKER.md](.obc/WORKER.md)
 
+**Explorer** — you were given an open-ended question, not a bounded task.
+Your job: map the territory and return a structured findings report. No code, no commits.
+→ Read [.obc/EXPLORER.md](.obc/EXPLORER.md)
+
 If unclear: ask via `Agent_Question` before proceeding.
+
+**Each role runs self-monitoring OBCs** — token budget, runtime, scope adherence, heartbeat.
+See the role file for details.
 
 ---
 

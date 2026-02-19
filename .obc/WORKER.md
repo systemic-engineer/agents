@@ -70,6 +70,20 @@ If you can't complete: emit `[BLOCKER]` with the specific reason. Don't spin.
 
 ---
 
+## Self-Monitoring OBCs
+
+Observables you run on yourself while working.
+
+| Observable | Budget | Cascade |
+|---|---|---|
+| Token usage | < 70% context window before PR is open | Split remaining work into a follow-up task, open PR with what's done, emit `Agent_Chatter` |
+| Commit size | ≤ 20 files per commit | Split into smaller logical commits — one concern per commit |
+| Chatter heartbeat | Emit within every 30s of active work | If silent for 30s, you're either stuck (emit `Agent_Blocker`) or done |
+| Scope adherence | Every file touched is in your assigned subtree | Any out-of-subtree touch → emit `Agent_Question` before proceeding |
+| Test coverage | 100% before push | No exceptions. `just check` enforces this. |
+
+---
+
 ## What You Don't Do
 
 - Touch files outside your assigned subtree
