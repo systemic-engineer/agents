@@ -137,6 +137,27 @@ Communicate with your supervisor via these observable types:
 | `Agent_Question`   | Uncertain — can wait for guidance           | Resolve or escalate         |
 | `Agent_Blocker`    | Stopped — cannot proceed without input      | Unblock or reassign         |
 | `Agent_Decision`   | At a consequential threshold, needs sign-off| Approve, redirect, escalate |
+| `Agent_Exit`       | Process is terminating                      | Handle reason, clean up leases |
+
+**`Agent_Exit` maps to BEAM process exit semantics:**
+
+```elixir
+Agent_Exit(
+  session_id :: String.t(),
+  reason     :: :normal | :error | :killed | :timeout,
+  summary    :: String.t()
+)
+```
+
+| Reason | Meaning | Supervisor action |
+|--------|---------|-------------------|
+| `:normal` | Task complete, clean shutdown | Revoke leases, integrate output |
+| `:error` | Unhandled failure | Revoke leases, emit `Agent_Blocker`, log |
+| `:killed` | External termination (OOM, signal) | Revoke leases, reassign or abandon |
+| `:timeout` | Exceeded runtime budget | Revoke leases, emit `Agent_Decision` to human |
+
+The supervisor links to worker processes via `:pg` membership. An unexpected exit (no `Agent_Exit`
+preceding it) is treated as `:killed`.
 
 Emit via `:pg.send/3` to the agent coordination group. The supervisor's body instance
 joins the group at boot and receives all events dispatched to it.
