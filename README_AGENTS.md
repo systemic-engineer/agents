@@ -138,6 +138,7 @@ Communicate with your supervisor via these observable types:
 | `Agent_Blocker`    | Stopped — cannot proceed without input      | Unblock or reassign         |
 | `Agent_Decision`   | At a consequential threshold, needs sign-off| Approve, redirect, escalate |
 | `Agent_Exit`       | Process is terminating                      | Handle reason, clean up leases |
+| `Agent_Reschedule` | Maintenance actor yielding, state handed off| Store state, fire next invocation at `next_run` |
 
 **`Agent_Exit` maps to BEAM process exit semantics:**
 
@@ -158,6 +159,23 @@ Agent_Exit(
 
 The supervisor links to worker processes via `:pg` membership. An unexpected exit (no `Agent_Exit`
 preceding it) is treated as `:killed`.
+
+**`Agent_Reschedule` is a state evolution, not an exit:**
+
+```elixir
+Agent_Reschedule(
+  session_id :: String.t(),
+  next_run   :: DateTime.t() | :immediate,
+  state      :: map()
+)
+```
+
+Used by maintenance actors after each cycle. The `state` map is handed to the next invocation —
+last seen SHA, last check timestamp, last known metric value. The next invocation starts warm,
+not cold. No file writes needed to persist between cycles; state flows through the pg group.
+
+This maps directly to GenServer `{:noreply, new_state}` — the process yields with updated state,
+the supervisor holds it until the next trigger fires.
 
 Emit via `:pg.send/3` to the agent coordination group. The supervisor's body instance
 joins the group at boot and receives all events dispatched to it.

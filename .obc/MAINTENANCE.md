@@ -39,11 +39,30 @@ Your body handles the trigger. You define the OBC pipeline that evaluates it.
 Each maintenance cycle is short and bounded:
 
 1. **Observe** — fetch the current state of your source
-2. **Evaluate** — compare against budget conditions
+2. **Evaluate** — compare against budget conditions (diff against previous state if relevant)
 3. **Cascade** — emit events, spawn agents, or do nothing
-4. **Return** — go back to waiting. Don't linger.
+4. **Reschedule** — emit `Agent_Reschedule` with updated state, then exit
 
-If a cascade spawns a Worker, you don't wait for it. You return to your schedule.
+`Agent_Reschedule` is a state evolution, not an exit. The supervisor holds your state and
+passes it to the next invocation when the schedule triggers. Your next self starts warm:
+
+```elixir
+Agent_Reschedule(
+  session_id: session_id,
+  next_run: :immediate | ~U[2026-02-20 03:00:00Z],
+  state: %{
+    last_seen_sha: "abc123",
+    last_checked_at: ~U[2026-02-19 15:00:00Z],
+    last_metric_value: 42.0
+    # whatever your cycle needs to diff against
+  }
+)
+```
+
+This maps to GenServer `{:noreply, new_state}` — yield with updated state, supervisor holds it.
+No file writes needed between cycles. State flows through the pg group.
+
+If a cascade spawns a Worker, you don't wait for it. Reschedule and exit.
 Workers report back via the pg group. You pick that up on your next cycle if relevant.
 
 ---
