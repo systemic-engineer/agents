@@ -37,12 +37,72 @@
           export LANG=en_US.UTF-8
         '';
 
+        # Glue sidecar script — bundled in the nix store so it's always findable
+        glueSidecar = pkgs.writeText "glue-sidecar.exs"
+          (builtins.readFile ./glue/sidecar.exs);
+
+        glueShellHook = ''
+          # ── Glue sidecar ────────────────────────────────────────────────────
+          export GLUE_NODE="''${GLUE_NODE:-glue@Alexs-MacBook-Pro}"
+          # Installed release takes precedence; fall back to dev build
+          if [ -f "''${HOME}/.local/libexec/glue/bin/glue" ]; then
+            export GLUE_BIN="''${HOME}/.local/libexec/glue/bin/glue"
+            export GLUE_COOKIE="$(cat ''${HOME}/.local/libexec/glue/releases/COOKIE 2>/dev/null || echo glue_local)"
+          elif [ -f "/Users/alexwolf/dev/projects/glue/_build/prod/rel/glue/bin/glue" ]; then
+            export GLUE_BIN="/Users/alexwolf/dev/projects/glue/_build/prod/rel/glue/bin/glue"
+            export GLUE_COOKIE="$(cat /Users/alexwolf/dev/projects/glue/_build/prod/rel/glue/releases/COOKIE 2>/dev/null || echo glue_local)"
+          else
+            export GLUE_BIN=""
+            export GLUE_COOKIE="glue_local"
+          fi
+          export GLUE_WORKER_ID="''${GLUE_WORKER_ID:-agent-$$}"
+          export GLUE_SESSION_ID="''${GLUE_SESSION_ID:-session-$$}"
+          export GLUE_EVENT_LOG="/tmp/glue-events-$$.log"
+
+          # Shell functions — exported so subshells inherit them
+          glue-recv()    { tail -f "$GLUE_EVENT_LOG" 2>/dev/null; }
+          glue-status()  {
+            if "$GLUE_BIN" rpc "IO.puts(node())" 2>/dev/null; then echo "glue: up"
+            else echo "glue: unreachable"; fi
+          }
+          glue-chatter() {
+            local msg="$1"
+            "$GLUE_BIN" rpc "Glue.Dispatch.dispatch(Glue.Events.chatter(Glue.SessionId.new(\"$GLUE_SESSION_ID\"), Glue.WorkerId.new(\"$GLUE_WORKER_ID\"), Glue.Message.new(\"$msg\"), DateTime.utc_now()))"
+          }
+          glue-dm() {
+            local target="$1" msg="$2"
+            "$GLUE_BIN" rpc "Glue.Dispatch.send_to(Glue.WorkerId.new(\"$target\"), Glue.Events.dm(Glue.SessionId.new(\"$GLUE_SESSION_ID\"), Glue.WorkerId.new(\"$GLUE_WORKER_ID\"), Glue.WorkerId.new(\"$target\"), Glue.Message.new(\"$msg\"), DateTime.utc_now()))"
+          }
+          export -f glue-recv glue-status glue-chatter glue-dm
+
+          # Start sidecar in background if glue binary is available
+          if [ -n "$GLUE_BIN" ] && [ -f "$GLUE_BIN" ]; then
+            GLUE_NODE="$GLUE_NODE" \
+            GLUE_COOKIE="$GLUE_COOKIE" \
+            GLUE_WORKER_ID="$GLUE_WORKER_ID" \
+            GLUE_SESSION_ID="$GLUE_SESSION_ID" \
+            GLUE_EVENT_LOG="$GLUE_EVENT_LOG" \
+            elixir --sname "glue-sidecar-$$" --cookie "$GLUE_COOKIE" ${glueSidecar} \
+              2>/tmp/glue-sidecar-$$.log &
+            _GLUE_SIDECAR_PID=$!
+            echo "glue: sidecar started (pid $_GLUE_SIDECAR_PID, worker=$GLUE_WORKER_ID)"
+          else
+            echo "glue: daemon not installed — sidecar skipped (install with: just install in glue repo)"
+          fi
+
+          trap '
+            [ -n "$_GLUE_SIDECAR_PID" ] && kill "$_GLUE_SIDECAR_PID" 2>/dev/null
+            rm -f "$GLUE_EVENT_LOG"
+          ' EXIT
+          # ────────────────────────────────────────────────────────────────────
+        '';
+
         elixirShellHook = baseShellHook + ''
           export MIX_HOME=$PWD/.nix-mix
           export MIX_REBAR3=$PWD/.nix-mix/rebar3
           export HEX_HOME=$PWD/.nix-hex
           export PATH=$MIX_HOME/bin:$HEX_HOME/bin:$PATH
-        '';
+        '' + glueShellHook;
 
       in {
         devShells = {
