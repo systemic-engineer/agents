@@ -134,7 +134,7 @@ spawn-worktree branch base="main":
     #!/usr/bin/env bash
     set -euo pipefail
     repo=$(git rev-parse --show-toplevel)
-    name=$(echo "{{branch}}" | sed 's|.*/||; s|[^a-zA-Z0-9]|-|g')
+    name=$(echo "{{branch}}" | sed 's|[^a-zA-Z0-9]|-|g')
     path="$(dirname "$repo")/$(basename "$repo")-${name}"
     existing=$(git worktree list | awk -v b="[{{branch}}]" '$3 == b {print $1}')
     if [ -n "$existing" ]; then

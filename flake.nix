@@ -51,22 +51,34 @@
         # In the main worktree — no enforcement (safe for ad-hoc human use).
         worktreeShellHook = ''
           # ── Worktree guard ────────────────────────────────────────────────────
-          _wt_main=$(git worktree list 2>/dev/null | head -1 | awk '{print $1}')
-          if [ "$(pwd)" != "''${_wt_main}" ]; then
-            _wt_branch=$(git branch --show-current 2>/dev/null)
-            if [ -z "''${_wt_branch}" ]; then
-              echo "❌ worktree guard: detached HEAD — workers must be on a named branch"
-              exit 1
+          # Wrapped in a function so `return 1` exits the function only —
+          # the outer `|| exit 1` then exits the devshell cleanly without
+          # risk of accidentally killing a parent shell if sourced differently.
+          #
+          # Uses `pwd -P` on both sides to resolve symlinks before comparing,
+          # so macOS /tmp → /private/tmp style paths don't cause false mismatches.
+          _worktree_guard() {
+            _wt_main=$(git worktree list 2>/dev/null | head -1 | awk '{print $1}')
+            _wt_real=$(pwd -P 2>/dev/null)
+            _wt_main_real=$(cd "''${_wt_main}" 2>/dev/null && pwd -P)
+            if [ "''${_wt_real}" != "''${_wt_main_real}" ]; then
+              _wt_branch=$(git branch --show-current 2>/dev/null)
+              if [ -z "''${_wt_branch}" ]; then
+                echo "❌ worktree guard: detached HEAD — workers must be on a named branch"
+                return 1
+              fi
+              if [ "''${_wt_branch}" = "main" ] || [ "''${_wt_branch}" = "master" ]; then
+                echo "❌ worktree guard: workers must use a feature branch, not ''${_wt_branch}"
+                echo "   Create a worktree: just spawn-worktree <branch>"
+                return 1
+              fi
+              export AGENT_BRANCH="''${_wt_branch}"
+              export GLUE_CHANNEL="''${GLUE_CHANNEL:-''${_wt_branch}}"
+              echo "✓ worktree: ''${_wt_branch} ($(pwd))"
             fi
-            if [ "''${_wt_branch}" = "main" ] || [ "''${_wt_branch}" = "master" ]; then
-              echo "❌ worktree guard: workers must use a feature branch, not ''${_wt_branch}"
-              echo "   Create a worktree: just spawn-worktree <branch>"
-              exit 1
-            fi
-            export AGENT_BRANCH="''${_wt_branch}"
-            export GLUE_CHANNEL="''${GLUE_CHANNEL:-''${_wt_branch}}"
-            echo "✓ worktree: ''${_wt_branch} ($(pwd))"
-          fi
+          }
+          _worktree_guard || exit 1
+          unset -f _worktree_guard
           # ──────────────────────────────────────────────────────────────────────
         '';
 
@@ -77,13 +89,14 @@
         glueShellHook = ''
           # ── Glue sidecar ────────────────────────────────────────────────────
           export GLUE_NODE="''${GLUE_NODE:-glue@Alexs-MacBook-Pro}"
-          # Installed release takes precedence; fall back to dev build
+          # Installed release takes precedence; fall back to dev build.
+          # Dev path uses $HOME so this works on any machine.
           if [ -f "''${HOME}/.local/libexec/glue/bin/glue" ]; then
             export GLUE_BIN="''${HOME}/.local/libexec/glue/bin/glue"
             export GLUE_COOKIE="$(cat ''${HOME}/.local/libexec/glue/releases/COOKIE 2>/dev/null || echo glue_local)"
-          elif [ -f "/Users/alexwolf/dev/projects/glue/_build/prod/rel/glue/bin/glue" ]; then
-            export GLUE_BIN="/Users/alexwolf/dev/projects/glue/_build/prod/rel/glue/bin/glue"
-            export GLUE_COOKIE="$(cat /Users/alexwolf/dev/projects/glue/_build/prod/rel/glue/releases/COOKIE 2>/dev/null || echo glue_local)"
+          elif [ -f "''${HOME}/dev/projects/glue/_build/prod/rel/glue/bin/glue" ]; then
+            export GLUE_BIN="''${HOME}/dev/projects/glue/_build/prod/rel/glue/bin/glue"
+            export GLUE_COOKIE="$(cat ''${HOME}/dev/projects/glue/_build/prod/rel/glue/releases/COOKIE 2>/dev/null || echo glue_local)"
           else
             export GLUE_BIN=""
             export GLUE_COOKIE="glue_local"
@@ -108,8 +121,10 @@
           }
           export -f glue-recv glue-status glue-chatter glue-dm
 
-          # Start sidecar in background if glue binary is available
-          if [ -n "$GLUE_BIN" ] && [ -f "$GLUE_BIN" ]; then
+          # Start sidecar in background if glue binary is available AND elixir is on PATH.
+          # The elixir check ensures base/default devShells (no OTP in buildInputs) skip
+          # the sidecar gracefully rather than failing silently.
+          if [ -n "$GLUE_BIN" ] && [ -f "$GLUE_BIN" ] && command -v elixir >/dev/null 2>&1; then
             GLUE_NODE="$GLUE_NODE" \
             GLUE_COOKIE="$GLUE_COOKIE" \
             GLUE_WORKER="$GLUE_WORKER" \
