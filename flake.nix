@@ -30,6 +30,7 @@
         elixirTools = [
           elixir
           pkgs.erlang_27
+          beamPkgs.rebar3
           pkgs.mix2nix
         ];
 
@@ -99,7 +100,7 @@
 
         elixirShellHook = baseShellHook + ''
           export MIX_HOME=$PWD/.nix-mix
-          export MIX_REBAR3=$PWD/.nix-mix/rebar3
+          export MIX_REBAR3=${beamPkgs.rebar3}/bin/rebar3
           export HEX_HOME=$PWD/.nix-hex
           export PATH=$MIX_HOME/bin:$HEX_HOME/bin:$PATH
         '' + glueShellHook;
