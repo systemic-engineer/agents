@@ -1,0 +1,29 @@
+#!/bin/sh
+
+# pre-push hook: Enforce coverage before pushing.
+#
+# Runs `just pre-push` if a Justfile with that recipe exists.
+# Projects define what pre-push means — typically: 100% test coverage.
+# Reality debt stops at the push boundary.
+#
+# Canonical source: systemic-engineer/agents/hooks/pre-push
+# Nix-managed version: ~/.os/home/git.nix
+
+if [ ! -f "Justfile" ] || ! just --list 2>/dev/null | grep -q "pre-push"; then
+  echo "   (no 'just pre-push' recipe found — skipping coverage enforcement)"
+  exit 0
+fi
+
+echo "Running pre-push checks..."
+just pre-push 2>&1
+
+if [ $? -ne 0 ]; then
+  echo ""
+  echo "❌ Push rejected: pre-push checks failed."
+  echo "   Fix coverage gaps and try again."
+  echo ""
+  exit 1
+fi
+
+echo "✓ Pre-push checks passed."
+exit 0

@@ -1,0 +1,131 @@
+#!/bin/sh
+
+# commit-msg hook: Enforce TDD cycle discipline.
+#
+# Every commit must declare its TDD phase:
+#   🔴 — Red:     writing failing tests. Tests must fail.
+#   🟢 — Green:   making tests pass. Tests must pass. Must follow 🔴.
+#   ♻️  — Refactor: structural cleanup. Tests must pass. No new behavior.
+#   🔀 — Merge:   integrating branches. Tests must pass. No sequence rule.
+#
+# Sequence rule: 🔴 must be immediately followed by 🟢.
+#
+# Canonical source: ~/.os/git.nix — update there first, then sync here.
+#
+# Stash isolation: runs checks against staged changes only.
+# Unstaged changes are stashed before running and restored after.
+
+COMMIT_MSG_FILE="$1"
+# Phase markers are only checked on the subject line (first line)
+SUBJECT=$(head -1 "$COMMIT_MSG_FILE")
+
+has_red=$(echo "$SUBJECT" | grep -c "🔴")
+has_green=$(echo "$SUBJECT" | grep -c "🟢")
+has_refactor=$(echo "$SUBJECT" | grep -c "♻️")
+has_merge=$(echo "$SUBJECT" | grep -c "🔀")
+
+# Require exactly one phase marker
+total=$((has_red + has_green + has_refactor + has_merge))
+
+if [ "$total" -eq 0 ]; then
+  echo ""
+  echo "❌ Commit rejected: missing TDD phase marker."
+  echo ""
+  echo "   Every commit must declare its phase:"
+  echo "   🔴 — Red: write failing tests (tests must fail)"
+  echo "   🟢 — Green: make tests pass (tests must pass, must follow 🔴)"
+  echo "   ♻️  — Refactor: structural only (tests must pass, no new behavior)"
+  echo "   🔀 — Merge: integrating branches (tests must pass)"
+  echo ""
+  exit 1
+fi
+
+if [ "$total" -gt 1 ]; then
+  echo ""
+  echo "❌ Commit rejected: multiple phase markers found. Pick exactly one."
+  echo ""
+  exit 1
+fi
+
+# Sequence check: if previous commit was 🔴, current must be 🟢
+prev_subject=$(git log -1 --format="%s" 2>/dev/null)
+prev_was_red=$(echo "$prev_subject" | grep -c "🔴")
+
+if [ "$prev_was_red" -gt 0 ] && [ "$has_green" -eq 0 ]; then
+  echo ""
+  echo "❌ Commit rejected: previous commit was 🔴 — this commit must be 🟢."
+  echo "   Make the failing tests pass before committing as anything else."
+  echo ""
+  exit 1
+fi
+
+# Run just pre-commit against staged changes only.
+# Unstaged changes are stashed before checks and restored after.
+run_staged() {
+  before=$(git stash list | wc -l)
+  git stash push --keep-index --quiet 2>/dev/null || true
+  after=$(git stash list | wc -l)
+  just pre-commit 2>&1
+  status=$?
+  if [ "$after" -gt "$before" ]; then
+    git stash pop --quiet 2>/dev/null || true
+  fi
+  return $status
+}
+
+# Phase-specific validation
+if [ "$has_red" -gt 0 ]; then
+  echo "🔴 Red phase — verifying tests fail..."
+  run_staged
+  if [ $? -eq 0 ]; then
+    echo ""
+    echo "❌ Commit rejected: declared 🔴 but tests are passing."
+    echo "   Write a failing test first, then commit."
+    echo ""
+    exit 1
+  fi
+  echo "✓ Tests are red. Commit accepted."
+  exit 0
+fi
+
+if [ "$has_green" -gt 0 ]; then
+  echo "🟢 Green phase — verifying tests pass..."
+  run_staged
+  if [ $? -ne 0 ]; then
+    echo ""
+    echo "❌ Commit rejected: declared 🟢 but tests are failing."
+    echo "   Make the tests pass before committing as 🟢."
+    echo ""
+    exit 1
+  fi
+  echo "✓ Tests are green. Commit accepted."
+  exit 0
+fi
+
+if [ "$has_refactor" -gt 0 ]; then
+  echo "♻️  Refactor phase — verifying just pre-commit passes..."
+  run_staged
+  if [ $? -ne 0 ]; then
+    echo ""
+    echo "❌ Commit rejected: declared ♻️ but tests are failing."
+    echo "   Refactors must not change behavior. Fix the breakage first."
+    echo ""
+    exit 1
+  fi
+  echo "✓ Checks pass. Refactor accepted."
+  exit 0
+fi
+
+if [ "$has_merge" -gt 0 ]; then
+  echo "🔀 Merge — verifying tests pass..."
+  run_staged
+  if [ $? -ne 0 ]; then
+    echo ""
+    echo "❌ Commit rejected: declared 🔀 but tests are failing."
+    echo "   Resolve conflicts so tests pass before completing the merge."
+    echo ""
+    exit 1
+  fi
+  echo "✓ Tests pass. Merge accepted."
+  exit 0
+fi
