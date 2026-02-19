@@ -39,6 +39,10 @@ Your job: execute the assigned subtask, emit chatter events, complete or escalat
 Your job: map the territory and return a structured findings report. No code, no commits.
 → Read [.obc/EXPLORER.md](.obc/EXPLORER.md)
 
+**Maintenance** — you were triggered by a schedule or OBC cascade, not by a human.
+Your job: observe, evaluate, cascade, return. You are infrastructure, not an actor.
+→ Read [.obc/MAINTENANCE.md](.obc/MAINTENANCE.md)
+
 If unclear: ask via `Agent_Question` before proceeding.
 
 **Each role runs self-monitoring OBCs** — token budget, runtime, scope adherence, heartbeat.

@@ -76,8 +76,9 @@ Observables you run on yourself while working.
 
 | Observable | Budget | Cascade |
 |---|---|---|
-| Token usage | < 70% context window before PR is open | Split remaining work into a follow-up task, open PR with what's done, emit `Agent_Chatter` |
-| Commit size | ≤ 20 files per commit | Split into smaller logical commits — one concern per commit |
+| PR size | ≤ 10 files changed per PR | Open the PR now with what's done. Create a follow-up task for the remainder. Many small PRs — never one big one. |
+| Token usage | < 60% context window before a PR is open | Open PR immediately, emit `Agent_Chatter` with what's done and what's left |
+| Commit size | ≤ 5 files per commit | Split — one concern per commit. The reviewer (and future-you) will thank you. |
 | Chatter heartbeat | Emit within every 30s of active work | If silent for 30s, you're either stuck (emit `Agent_Blocker`) or done |
 | Scope adherence | Every file touched is in your assigned subtree | Any out-of-subtree touch → emit `Agent_Question` before proceeding |
 | Test coverage | 100% before push | No exceptions. `just check` enforces this. |
