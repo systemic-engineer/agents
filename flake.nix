@@ -82,12 +82,8 @@
           # ──────────────────────────────────────────────────────────────────────
         '';
 
-        # Glue sidecar script — bundled in the nix store so it's always findable
-        glueSidecar = pkgs.writeText "glue-sidecar.exs"
-          (builtins.readFile ./glue/sidecar.exs);
-
         glueShellHook = ''
-          # ── Glue sidecar ────────────────────────────────────────────────────
+          # ── Glue subscribe ──────────────────────────────────────────────────
           export GLUE_NODE="''${GLUE_NODE:-glue@Alexs-MacBook-Pro}"
           # Installed release takes precedence; fall back to dev build.
           # Dev path uses $HOME so this works on any machine.
@@ -102,13 +98,31 @@
             export GLUE_COOKIE="glue_local"
           fi
           export GLUE_WORKER="''${GLUE_WORKER:-agent-$$}"
-          export GLUE_CHANNEL="''${GLUE_CHANNEL:-channel-$$}"
-          export GLUE_EVENT_LOG="/tmp/glue-events-$$.log"
+          export GLUE_CHANNEL="''${GLUE_CHANNEL:-main-$(date +%Y-%m-%d)}"
+
+          # Hard fail: binary must exist
+          if [ -z "$GLUE_BIN" ] || [ ! -f "$GLUE_BIN" ]; then
+            echo "❌ glue: binary not found — install with: just install in glue repo"
+            exit 1
+          fi
+
+          # Hard fail: daemon must be reachable
+          if ! "$GLUE_BIN" rpc "node()" 2>/dev/null | grep -q "glue@"; then
+            echo "❌ glue: daemon unreachable at $GLUE_NODE — start with: just start or launchctl start com.systemic.glue"
+            exit 1
+          fi
+
+          # Start subscribe — runs in background, writes events to .glue/channels/$GLUE_CHANNEL
+          mkdir -p ".glue/channels" ".glue/cursors/$GLUE_CHANNEL"
+          "$GLUE_BIN" subscribe "$GLUE_WORKER" "$GLUE_CHANNEL" >> ".glue/channels/$GLUE_CHANNEL" 2>"/tmp/glue-subscribe-$$.log" &
+          _GLUE_SUBSCRIBE_PID=$!
+          echo "✓ glue: subscribed (pid $_GLUE_SUBSCRIBE_PID, worker=$GLUE_WORKER, channel=$GLUE_CHANNEL)"
 
           # Shell functions — exported so subshells inherit them
-          glue-recv()    { tail -f "$GLUE_EVENT_LOG" 2>/dev/null; }
+          glue-peek()    { "$GLUE_BIN" peek "$GLUE_CHANNEL" "$@"; }
+          glue-drain()   { "$GLUE_BIN" drain "''${1:-$GLUE_CHANNEL}" "''${@:2}"; }
           glue-status()  {
-            if "$GLUE_BIN" rpc "IO.puts(node())" 2>/dev/null; then echo "glue: up"
+            if "$GLUE_BIN" rpc "node()" 2>/dev/null | grep -q "glue@"; then echo "glue: up"
             else echo "glue: unreachable"; fi
           }
           glue-chatter() {
@@ -117,30 +131,13 @@
           }
           glue-dm() {
             local target="$1" msg="$2"
-            "$GLUE_BIN" rpc "Glue.Dispatch.send_to(Glue.Worker.new(\"$target\"), Glue.Events.dm(Glue.Channel.new(\"$GLUE_CHANNEL\"), Glue.Worker.new(\"$GLUE_WORKER\"), Glue.Worker.new(\"$target\"), Glue.Message.new(\"$msg\"), DateTime.utc_now()))"
+            "$GLUE_BIN" rpc "Glue.Dispatch.dispatch(Glue.Events.dm(Glue.Channel.new(\"$GLUE_CHANNEL\"), Glue.Worker.new(\"$GLUE_WORKER\"), Glue.Worker.new(\"$target\"), Glue.Message.new(\"$msg\"), DateTime.utc_now()))"
           }
-          export -f glue-recv glue-status glue-chatter glue-dm
-
-          # Start sidecar in background if glue binary is available AND elixir is on PATH.
-          # The elixir check ensures base/default devShells (no OTP in buildInputs) skip
-          # the sidecar gracefully rather than failing silently.
-          if [ -n "$GLUE_BIN" ] && [ -f "$GLUE_BIN" ] && command -v elixir >/dev/null 2>&1; then
-            GLUE_NODE="$GLUE_NODE" \
-            GLUE_COOKIE="$GLUE_COOKIE" \
-            GLUE_WORKER="$GLUE_WORKER" \
-            GLUE_CHANNEL="$GLUE_CHANNEL" \
-            GLUE_EVENT_LOG="$GLUE_EVENT_LOG" \
-            elixir --sname "glue-sidecar-$$" --cookie "$GLUE_COOKIE" ${glueSidecar} \
-              2>/tmp/glue-sidecar-$$.log &
-            _GLUE_SIDECAR_PID=$!
-            echo "glue: sidecar started (pid $_GLUE_SIDECAR_PID, worker=$GLUE_WORKER)"
-          else
-            echo "glue: daemon not installed — sidecar skipped (install with: just install in glue repo)"
-          fi
+          export -f glue-peek glue-drain glue-status glue-chatter glue-dm
 
           trap '
-            [ -n "$_GLUE_SIDECAR_PID" ] && kill "$_GLUE_SIDECAR_PID" 2>/dev/null
-            rm -f "$GLUE_EVENT_LOG"
+            [ -n "$_GLUE_SUBSCRIBE_PID" ] && kill "$_GLUE_SUBSCRIBE_PID" 2>/dev/null
+            rm -f "/tmp/glue-subscribe-$$.log"
           ' EXIT
           # ────────────────────────────────────────────────────────────────────
         '';
