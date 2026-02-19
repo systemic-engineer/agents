@@ -57,7 +57,7 @@
             export GLUE_COOKIE="glue_local"
           fi
           export GLUE_WORKER="''${GLUE_WORKER:-agent-$$}"
-          export GLUE_CHANNEL="''${GLUE_CHANNEL:-session-$$}"
+          export GLUE_CHANNEL="''${GLUE_CHANNEL:-channel-$$}"
           export GLUE_EVENT_LOG="/tmp/glue-events-$$.log"
 
           # Shell functions — exported so subshells inherit them
